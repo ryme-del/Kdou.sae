@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>SAÉ S1.04 - KDou</title>
+<style>
+body{font-family:Arial,Helvetica,sans-serif;max-width:820px;margin:0 auto;padding:20px;line-height:1.5;color:#222}
+h1{color:#1a4d7a}
+h2{color:#1a4d7a;border-bottom:2px solid #1a4d7a;padding-bottom:4px;margin-top:40px}
+h3{margin-top:28px}
+pre{background:#f0f0f0;padding:10px;overflow-x:auto;font-size:13px}
+code{background:#f0f0f0;padding:1px 4px}
+nav a{margin-right:12px}
+</style>
+</head>
+<body>
+
+<h1>SAÉ S1.04 : la base de données de KDou</h1>
+<p>Ryme Bouchihane et Ryma Dif<br>IUT de Paris Rives de Seine</p>
+
+<nav>
+<a href="#contexte">Contexte</a>
+<a href="#base">La base</a>
+<a href="#explo">Exploration</a>
+<a href="#indicateurs">Indicateurs</a>
+<a href="#perso">Nos indicateurs</a>
+<a href="#bilan">Bilan</a>
+</nav>
+
+<h2 id="contexte">1. Contexte</h2>
+<p>KDou est une entreprise française qui vend des produits d’épicerie fine achetés à des fournisseurs du monde entier. Tous ses clients sont en France. KDou se pose des questions sur sa rentabilité et voudrait avoir une image plus éco-responsable. Notre travail est d’étudier ses données avec des requêtes SQL, puis de proposer des indicateurs pour l’aider.</p>
+
+<h2 id="base">2. La base de données</h2>
+<p>La base (fichier DataKadou2026.accdb) a 7 tables. Voici leurs clés :</p>
+<ul>
+<li><b>Categorie</b> : clé primaire CodeCateg.</li><li><b>Pays</b> : clé primaire NoPays.</li><li><b>Fournisseur</b> : clé primaire NoFour ; clé étrangère NoPays (vers Pays).</li><li><b>Produit</b> : clé primaire RefProd ; clés étrangères NoFour (vers Fournisseur) et CodeCateg (vers Categorie).</li><li><b>Clientele</b> : clé primaire CodeCli ; clés étrangères NoPays (vers Pays) et CodeCliPart (vers Clientele, le client pilote).</li><li><b>Commande</b> : clé primaire N° commande ; clé étrangère CodeCli (vers Clientele).</li><li><b>DetailCommande</b> : clé primaire composée de N° commande et Réf produit ; clés étrangères N° commande (vers Commande) et Réf produit (vers Produit).</li>
+</ul>
+<p>Un client passe plusieurs commandes, une commande a plusieurs lignes, chaque ligne concerne un produit, et chaque produit a une catégorie et un fournisseur.</p>
+<p>La table Clientele a un lien vers elle-même : CodeCliPart contient le code du client « pilote » du réseau. C’est pour ça que le schéma montre la table deux fois. Dans les requêtes, on utilise donc la table deux fois avec deux noms (alias).</p>
+<p>Le prix de vente se calcule avec : prix de vente = coût d’achat × coefficient de marge de la catégorie. Le CA de chaque ligne de commande = quantité × (1 − remise) × coût d’achat × coefficient. Les frais de port ne sont pas comptés.</p>
+
+<h2 id="explo">3. Première exploration (1a à 1j)</h2>
+<h3 id="q1a">1a. Les clients parisiens</h3>
+<p><b>Question :</b> vérifier les coordonnées des clients parisiens, liste triée par société.</p>
+<p>Je filtre sur la ville. Access ne fait pas la différence entre majuscules et minuscules, donc « paris » est trouvé aussi.</p>
+<pre>SELECT CodeCli, Societe, Contact, Adresse, CodePostal, Ville, Tel, MailCli
+FROM Clientele
+WHERE Ville = &quot;Paris&quot;
+ORDER BY Societe;</pre>
+<p><b>Résultat :</b> 5 clients : ChefFamilla, Chez Bouxou, La Parisienne, Le Gourmet et Une petite faim. Deux fiches sont à vérifier : Le Gourmet (code postal 76001, et même mail que La Parisienne) et Une petite faim (ville écrite en minuscules).</p>
+<h3 id="q1b">1b. Produits des États-Unis à moins de 25 €</h3>
+<p><b>Question :</b> produits de provenance États-Unis avec un coût de moins de 25 € : nom, prix, fournisseur et ville.</p>
+<p>La provenance, c’est le pays du fournisseur. J’affiche le coût d’achat et le prix de vente (coût d’achat × coefficient de marge).</p>
+<pre>SELECT Produit.NomProd, Produit.CoutAchat, Round(Produit.CoutAchat*Categorie.CoefMarge,2) AS PrixVente,
+       Fournisseur.Societe AS Fournisseur, Fournisseur.Ville
+FROM Produit, Fournisseur, Pays, Categorie
+WHERE Produit.NoFour = Fournisseur.NoFour
+  AND Fournisseur.NoPays = Pays.NoPays
+  AND Produit.CodeCateg = Categorie.CodeCateg
+  AND Pays.PaysFR = &quot;Etats-Unis&quot;
+  AND Produit.CoutAchat &lt; 25
+ORDER BY Produit.CoutAchat;</pre>
+<p><b>Résultat :</b> 8 produits, chez 4 fournisseurs : Atlantic Bay Fish Co. (Boston), Grizzly Hopworks Co. (Bend), Bayou pice Traders (New Orleans) et Miss Ruby’s Kitchen (Ann Arbor). Le moins cher est le Jack’s New England Clam Chowder (8,04 €), le plus cher est le Grandma’s Boysenberry Spread (20,83 €).</p>
+<h3 id="q1c">1c. Viandes ou poissons à plus de 50 €</h3>
+<p><b>Question :</b> produits de catégorie viandes ou poissons avec un coût d’achat de plus de 50 €, avec fournisseur et pays.</p>
+<p>La catégorie des poissons s’appelle « Poissons et fruits de mer » dans la table Categorie.</p>
+<pre>SELECT Produit.NomProd, Produit.CoutAchat, Categorie.NomCateg,
+       Fournisseur.Societe AS Fournisseur, Pays.PaysFR AS Pays
+FROM Produit, Fournisseur, Pays, Categorie
+WHERE Produit.NoFour = Fournisseur.NoFour
+  AND Fournisseur.NoPays = Pays.NoPays
+  AND Produit.CodeCateg = Categorie.CodeCateg
+  AND Categorie.NomCateg IN (&quot;Viandes&quot;, &quot;Poissons et fruits de mer&quot;)
+  AND Produit.CoutAchat &gt; 50
+ORDER BY Produit.CoutAchat DESC;</pre>
+<p><b>Résultat :</b> 7 produits, tous importés : Dea Surströmming (120 €, Suède), Thüringer Rostbratwurst (103,16 €, Allemagne), Perth Pasties (97,33 €, Australie), Mishi Kobe Niku (80,83 €, Japon), Pâté chinois (68 €, Canada), Tourtière (56,21 €, Canada) et Carnarvon Tigers (52,08 €, Australie).</p>
+<h3 id="q1d">1d. Fournisseurs de viande ou de poisson</h3>
+<p><b>Question :</b> quels fournisseurs proposent de la viande ou du poisson ?</p>
+<p>Il suffit d’avoir au moins un produit dans une des deux catégories. DISTINCT évite de répéter un fournisseur.</p>
+<pre>SELECT DISTINCT Fournisseur.NoFour, Fournisseur.Societe, Pays.PaysFR AS Pays
+FROM Fournisseur, Produit, Categorie, Pays
+WHERE Fournisseur.NoFour = Produit.NoFour
+  AND Produit.CodeCateg = Categorie.CodeCateg
+  AND Fournisseur.NoPays = Pays.NoPays
+  AND Categorie.NomCateg IN (&quot;Viandes&quot;, &quot;Poissons et fruits de mer&quot;)
+ORDER BY Fournisseur.Societe;</pre>
+<p><b>Résultat :</b> 15 fournisseurs sur 48 : Atlantic Bay Fish Co., BaltikFisch GmbH, Boomerang Goods Pty Ltd., Coral Bay Delights Ltd., EthnicFood France, FjordSild AS, Havsmat Sverige AB, L’escargotière, Le Panier du Coin, Mayako Foods, Moines de Paris, Rontab, Sakura Imports, SkandiDelikat AB et TanteGreta Handelsgruppe AG.</p>
+<h3 id="q1e">1e. Fournisseurs de viande et de poisson</h3>
+<p><b>Question :</b> quels fournisseurs proposent de la viande et du poisson ?</p>
+<p>Cette fois il faut les deux chez le même fournisseur. Un produit n’a qu’une catégorie, donc je fais deux sous-requêtes IN.</p>
+<pre>SELECT NoFour, Societe
+FROM Fournisseur
+WHERE NoFour IN (SELECT Produit.NoFour FROM Produit, Categorie
+                 WHERE Produit.CodeCateg = Categorie.CodeCateg AND Categorie.NomCateg = &quot;Viandes&quot;)
+  AND NoFour IN (SELECT Produit.NoFour FROM Produit, Categorie
+                 WHERE Produit.CodeCateg = Categorie.CodeCateg AND Categorie.NomCateg = &quot;Poissons et fruits de mer&quot;);</pre>
+<p><b>Résultat :</b> 2 fournisseurs : Sakura Imports et Moines de Paris.</p>
+<h3 id="q1f">1f. Produits en carton ou en verre</h3>
+<p><b>Question :</b> quels produits sont conditionnés dans du carton ou dans du verre ?</p>
+<p>Le conditionnement est écrit en texte libre dans QteParUnit. Je cherche les mots « carton » et « verre » avec Like.</p>
+<pre>SELECT NomProd, QteParUnit
+FROM Produit
+WHERE QteParUnit Like &quot;*carton*&quot; OR QteParUnit Like &quot;*verre*&quot;
+ORDER BY NomProd;</pre>
+<p><b>Résultat :</b> 26 produits, par exemple Carnarvon Tigers (1 carton de 16 kg), Chocolade (10 cartons), Gorgonzola Telino (12 cartons de 100 g) et Nord-Ost Matjeshering (10 verres de 200 g). Limite : un produit en « boîte » ou en « pot » n’est pas compté, et comme c’est écrit à la main on ne peut pas être sûr de tout trouver.</p>
+<h3 id="q1g">1g. Les 3 dernières commandes de Max Deschamps</h3>
+<p><b>Question :</b> donner les 3 dernières commandes du client Max Deschamps.</p>
+<p>Max Deschamps est le contact de L’Ancienne Auberge. Il y a aussi un Jean Deschamps chez un autre client, donc je filtre sur le nom complet. TOP 3 garde les 3 premières lignes après le tri par date décroissante.</p>
+<pre>SELECT TOP 3 Commande.[N° commande], Commande.DateCde, Clientele.Societe, Clientele.Contact
+FROM Commande, Clientele
+WHERE Commande.CodeCli = Clientele.CodeCli
+  AND Clientele.Contact = &quot;Max Deschamps&quot;
+ORDER BY Commande.DateCde DESC;</pre>
+<p><b>Résultat :</b> les commandes 10717 (4 décembre 2021), 10672 (28 octobre 2021) et 10298 (16 octobre 2021).</p>
+<h3 id="q1h">1h. Fournisseurs qui ne proposent que des desserts</h3>
+<p><b>Question :</b> quels fournisseurs ne proposent que des desserts ?</p>
+<p>Je garde les fournisseurs qui ont au moins un produit et aucun produit d’une autre catégorie que Desserts.</p>
+<pre>SELECT NoFour, Societe
+FROM Fournisseur
+WHERE NoFour IN (SELECT NoFour FROM Produit)
+  AND NoFour NOT IN (SELECT NoFour FROM Produit
+                     WHERE CodeCateg &lt;&gt; (SELECT CodeCateg FROM Categorie WHERE NomCateg = &quot;Desserts&quot;));</pre>
+<p><b>Résultat :</b> 4 fournisseurs : Baker’s Treats, Ltd., Nordlicht Feinkost GmbH, Tulip & Co. Delicacies et Holland Zoetgoed BV.</p>
+<h3 id="q1i">1i. Fournisseurs hors France sans produit</h3>
+<p><b>Question :</b> quels fournisseurs hors France n’ont pas encore de produits au catalogue ?</p>
+<p>Je cherche les fournisseurs qui ne sont pas en France et dont le numéro n’est dans aucune ligne de Produit.</p>
+<pre>SELECT Fournisseur.NoFour, Fournisseur.Societe, Pays.PaysFR AS Pays
+FROM Fournisseur, Pays
+WHERE Fournisseur.NoPays = Pays.NoPays
+  AND Pays.PaysFR &lt;&gt; &quot;France&quot;
+  AND Fournisseur.NoFour NOT IN (SELECT NoFour FROM Produit);</pre>
+<p><b>Résultat :</b> 2 fournisseurs : Sabor do Sul Ltda. (Brésil) et Pacific United Traders Ltd. (Australie). Il y en a un troisième sans produit, Ronde du lac, mais il est français donc il ne compte pas.</p>
+<h3 id="q1j">1j. Couples de clients à Paris</h3>
+<p><b>Question :</b> pour optimiser les livraisons, quels couples de clients sont situés à Paris ?</p>
+<p>Je prends la table Clientele deux fois (A et B). A.CodeCli &lt; B.CodeCli évite un client avec lui-même et le même couple dans les deux sens. Avec 5 clients, on attend 5×4/2 = 10 couples.</p>
+<pre>SELECT A.Societe AS Client1, B.Societe AS Client2
+FROM Clientele AS A, Clientele AS B
+WHERE A.CodeCli &lt; B.CodeCli
+  AND A.Ville = &quot;Paris&quot; AND B.Ville = &quot;Paris&quot;
+ORDER BY A.Societe, B.Societe;</pre>
+<p><b>Résultat :</b> 10 couples, par exemple ChefFamilla et La Parisienne, ou Chez Bouxou et Le Gourmet. J’ai filtré sur la ville : avec le code postal 75, Le Gourmet (76001 par erreur) aurait disparu.</p>
+
+<h2 id="indicateurs">4. Indicateurs obligatoires (2 à 5)</h2>
+<h3 id="q2">2. CA total avec les fournisseurs de l’UE</h3>
+<p><b>Question :</b> quel est le chiffre d’affaires total généré à ce jour avec les fournisseurs de l’UE ?</p>
+<p>Le CA d’une ligne = quantité × (1 − remise) × coût d’achat × coefficient de marge (prix de vente, remise déduite). Les produits comptés sont ceux dont le fournisseur est dans un pays « Membre » de la table Pays. La France est aussi « Membre », donc je donne le résultat avec et sans la France.</p>
+<pre>SELECT Round(Sum(DetailCommande.Quantité*(1-DetailCommande.[Remise (%)])*Produit.CoutAchat*Categorie.CoefMarge),2) AS CA_Fournisseurs_UE
+FROM DetailCommande, Produit, Categorie, Fournisseur, Pays
+WHERE DetailCommande.[Réf produit] = Produit.RefProd AND Produit.CodeCateg = Categorie.CodeCateg AND Produit.NoFour = Fournisseur.NoFour AND Fournisseur.NoPays = Pays.NoPays
+  AND Pays.UE = &quot;Membre&quot;;</pre>
+<p>Pour le résultat sans la France, on ajoute <code>AND Pays.PaysFR &lt;&gt; "France"</code> à la fin.</p>
+<p><b>Résultat :</b> 2 754 529,72 € avec la France, 1 971 574,11 € sans la France. Le CA total est de 4 963 389,79 €, donc les fournisseurs de l’UE font 55,5 % du CA, mais les fournisseurs français seulement 15,8 %.</p>
+<h3 id="q3">3. CA annuel des desserts et des boissons</h3>
+<p><b>Question :</b> chiffre d’affaires annuel pour les catégories desserts ou boissons.</p>
+<p>Même calcul de CA, regroupé par année de commande (Year(DateCde)) et par catégorie.</p>
+<pre>SELECT Year(Commande.DateCde) AS Annee, Categorie.NomCateg, Round(Sum(DetailCommande.Quantité*(1-DetailCommande.[Remise (%)])*Produit.CoutAchat*Categorie.CoefMarge),2) AS CA
+FROM Commande, DetailCommande, Produit, Categorie
+WHERE Commande.[N° commande] = DetailCommande.[N° commande]
+  AND DetailCommande.[Réf produit] = Produit.RefProd
+  AND Produit.CodeCateg = Categorie.CodeCateg
+  AND Categorie.NomCateg IN (&quot;Desserts&quot;, &quot;Boissons&quot;)
+GROUP BY Year(Commande.DateCde), Categorie.NomCateg
+ORDER BY Year(Commande.DateCde), Categorie.NomCateg;</pre>
+<p><b>Résultat :</b> en 2021 (la seule année complète) : 913 373,88 € pour les boissons et 491 935,07 € pour les desserts, soit 1 405 308,95 € en tout. En 2020 (depuis fin juillet) : 115 223,65 € et 53 998,10 €. En 2022 il n’y a que 5 commandes (437,50 € et 952 €). Les années ne sont donc pas comparables.</p>
+<h3 id="q4">4. Produits carnés non commandés</h3>
+<p><b>Question :</b> nombre de produits carnés non commandés actuellement.</p>
+<p>J’ai pris « carnés » = catégorie Viandes. « Non commandé » = le produit n’est dans aucune ligne de DetailCommande.</p>
+<pre>SELECT Count(*) AS NbCarnesNonCommandes
+FROM Produit
+WHERE CodeCateg = (SELECT CodeCateg FROM Categorie WHERE NomCateg = &quot;Viandes&quot;)
+  AND RefProd NOT IN (SELECT [Réf produit] FROM DetailCommande);</pre>
+<p><b>Résultat :</b> 2 produits sur 8 : la Terrine Andouilloux et le Paté de Campagne au Pommeau. Si on comptait aussi les poissons et fruits de mer, on en trouverait 4.</p>
+<h3 id="q5">5. Clients pilotes et clients partenaires</h3>
+<p><b>Question :</b> a-t-on des clients pilotes d’un réseau partenaire ayant autant de commandes que les clients partenaires ?</p>
+<p>Un partenaire est un client dont CodeCliPart contient le code d’un autre client (son pilote). Je compte d’abord les commandes de chaque client (requête NbCmd), puis je compare le pilote et son partenaire en utilisant la table Clientele deux fois.</p>
+<pre>-- requête enregistrée sous le nom NbCmd
+SELECT CodeCli, Count(*) AS NbCde
+FROM Commande
+GROUP BY CodeCli;</pre>
+<pre>SELECT Pilote.Societe AS Pilote, NP.NbCde AS Cde_Pilote,
+       Partenaire.Societe AS Partenaire, NQ.NbCde AS Cde_Partenaire
+FROM Clientele AS Pilote, Clientele AS Partenaire, NbCmd AS NP, NbCmd AS NQ
+WHERE Partenaire.CodeCliPart = Pilote.CodeCli
+  AND NP.CodeCli = Pilote.CodeCli
+  AND NQ.CodeCli = Partenaire.CodeCli
+  AND NP.NbCde = NQ.NbCde;</pre>
+<p><b>Résultat :</b> oui, un seul cas : Le Nostradamu (pilote) et Petite Épicerie (partenaire) ont chacun 17 commandes. Deux partenaires n’ont jamais commandé (La Maison dans le Parc et Délices d’Agen).</p>
+
+<h2 id="perso">5. Nos indicateurs</h2>
+
+<h3>Indicateur de Ryme : le poids des fournisseurs hors UE dans le CA</h3>
+<p><b>Question :</b> pour chaque pays de fournisseurs, quel CA KDou fait avec les produits qui en viennent, et quelle part du CA total ça représente ?</p>
+<p><b>Intérêt :</b> plus un produit vient de loin, plus son transport pollue. Cet indicateur montre quels pays pèsent le plus dans le CA, pour que KDou puisse chercher des fournisseurs plus proches, dans l’UE, et avoir une image plus éco-friendly sans perdre de ventes.</p>
+<pre>-- requête enregistrée sous le nom CAparPays
+SELECT Pays.PaysFR, Pays.UE, Sum(DetailCommande.Quantité*(1-DetailCommande.[Remise (%)])*Produit.CoutAchat*Categorie.CoefMarge) AS CA
+FROM DetailCommande, Produit, Categorie, Fournisseur, Pays
+WHERE DetailCommande.[Réf produit] = Produit.RefProd AND Produit.CodeCateg = Categorie.CodeCateg AND Produit.NoFour = Fournisseur.NoFour AND Fournisseur.NoPays = Pays.NoPays
+GROUP BY Pays.PaysFR, Pays.UE;</pre>
+<pre>SELECT PaysFR AS Pays_fournisseur, UE, Round(CA,2) AS CA,
+       Round(CA/(SELECT Sum(CA) FROM CAparPays)*100,1) AS Part_du_CA_pct
+FROM CAparPays
+ORDER BY CA DESC;</pre>
+
+<p>La première requête calcule le CA par pays de fournisseur, la deuxième le divise par le CA total (sous-requête) pour avoir un pourcentage.</p>
+<p><b>Résultat :</b> 44,5 % du CA (2 208 860,07 €) vient de fournisseurs hors UE. Les pays qui pèsent le plus sont l’Allemagne (17,6 %), la France (15,8 %), l’Australie (13,3 %), l’Italie (11,7 %) et le Canada (9,8 %). L’Australie est le premier pays hors UE et le plus éloigné. Limite : la base ne dit pas comment les produits sont transportés, donc le pays est juste un repère de distance et pas une mesure de CO2.</p>
+
+<h3>Indicateur de Ryma : la marge par catégorie</h3>
+<p><b>Question :</b> pour chaque catégorie, quel est le CA et quelle est la marge (prix de vente − coût d’achat) ?</p>
+<p><b>Intérêt :</b> KDou se demande si elle est rentable et voudrait vendre des produits écologiques plus chers. Savoir quelles catégories rapportent le plus de marge montre où un produit éco plus cher serait le plus utile.</p>
+<pre>SELECT Categorie.NomCateg, Categorie.CoefMarge,
+       Round(Sum(DetailCommande.Quantité*(1-DetailCommande.[Remise (%)])*Produit.CoutAchat*Categorie.CoefMarge),2) AS CA,
+       Round(Sum(DetailCommande.Quantité*(1-DetailCommande.[Remise (%)])*Produit.CoutAchat*(Categorie.CoefMarge-1)),2) AS Marge,
+       Round((Categorie.CoefMarge-1)/Categorie.CoefMarge*100,1) AS Taux_de_marge_pct
+FROM DetailCommande, Produit, Categorie
+WHERE DetailCommande.[Réf produit] = Produit.RefProd AND Produit.CodeCateg = Categorie.CodeCateg
+GROUP BY Categorie.NomCateg, Categorie.CoefMarge
+ORDER BY Sum(DetailCommande.Quantité*(1-DetailCommande.[Remise (%)])*Produit.CoutAchat*(Categorie.CoefMarge-1)) DESC;</pre>
+
+<p>La marge d’une ligne = quantité × (1 − remise) × coût d’achat × (coefficient − 1), et on additionne par catégorie.</p>
+<p><b>Résultat :</b> la marge totale est de 2 513 278,39 € (50,6 % du CA). Les boissons (617 421,02 €), les produits laitiers (577 372,99 €) et les viandes (406 589,02 €) font environ 64 % de la marge. Les pâtes et céréales rapportent le moins (111 035,95 €), car leur coefficient est le plus bas (1,5). Attention : le coefficient comprend déjà le transport et le stockage, donc ce n’est pas du bénéfice net.</p>
+
+<h2 id="bilan">6. Bilan</h2>
+<h3>Comment on a travaillé</h3>
+<ul>
+<li>On a d’abord regardé chaque table et le schéma des relations pour trouver les clés primaires et étrangères.</li>
+<li>On a écrit les requêtes en SQL dans Access, avec des jointures dans le WHERE, des sous-requêtes (IN, NOT IN), des regroupements et la table Clientele utilisée deux fois.</li>
+<li>Pour les calculs plus longs, on a enregistré une première requête (NbCmd, CAparPays) et on l’a réutilisée.</li>
+<li>On a vérifié nos résultats en les recoupant, par exemple le CA des fournisseurs UE et hors UE additionnés donne bien le CA total.</li>
+</ul>
+
+<h3>Ce qu’on a trouvé</h3>
+<ul>
+<li>Le CA total est de 4 963 389,79 € et la marge est d’environ 50,6 % du CA.</li>
+<li>55,5 % du CA vient de fournisseurs de l’UE, mais seulement 15,8 % de fournisseurs français.</li>
+<li>2 produits de viande sur 8 n’ont jamais été commandés.</li>
+</ul>
+
+<h3>Difficultés</h3>
+<ul>
+<li>Plusieurs questions pouvaient se comprendre de deux façons (UE avec ou sans la France, « produits carnés », « autant de commandes »). On a expliqué notre choix à chaque fois.</li>
+<li>Presque toutes les commandes sont de 2021, donc le CA « annuel » n’est comparable qu’avec prudence.</li>
+<li>Chercher « carton » ou « verre » dans le conditionnement n’est pas très fiable, parce que c’est du texte écrit à la main.</li>
+</ul>
+
+<h3>Problèmes dans les données</h3>
+<p>On n’a rien corrigé dans la base, on signale seulement ce qu’on a vu :</p>
+<ul>
+<li>Le client Une petite faim a la ville « paris » écrite en minuscules.</li>
+<li>Le client Le Gourmet est à Paris mais a le code postal 76001, et la même adresse mail que La Parisienne.</li>
+<li>Deux paires de clients ont le même numéro de téléphone, et les numéros sont écrits de plusieurs façons.</li>
+<li>7 lignes de commande sont en double dans DetailCommande (commandes 11110, 11112, 11113, 11115, 11116 et 11120).</li>
+<li>7 commandes n’ont aucune ligne de détail, 22 n’ont pas de date d’envoi et 16 ont une date d’envoi avant la date de commande.</li>
+<li>Les commandes vont de juillet 2020 à novembre 2022, mais 966 sur 1 083 sont en 2021.</li>
+<li>Dans les conditionnements, les unités sont mélangées (g, onces, livres), et « 24 cartons (20 200 g) » pour le mascarpone ressemble à une faute de frappe.</li>
+<li>Deux produits différents s’appellent LimoCoca, et le fournisseur « Bayou pice Traders » a perdu un accent.</li>
+<li>La France est « Membre » de l’UE dans la table Pays, donc elle est comptée dans « fournisseurs de l’UE ».</li>
+</ul>
+
+</body>
+</html>
